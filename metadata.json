@@ -1,0 +1,7 @@
+{
+  "name": "CyberShield Elite",
+  "description": "A premium cybersecurity resource hub featuring AI-powered tips, curated security toolkits, and interactive threat analysis tools using Gemini AI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
