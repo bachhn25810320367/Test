@@ -23,6 +23,10 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [imageStyle, setImageStyle] = useState<'square' | 'vinyl'>('square');
+  const [imageFit, setImageFit] = useState<'cover' | 'contain'>('cover');
+  const [imageZoom, setImageZoom] = useState(1);
+  const [imageOffsetX, setImageOffsetX] = useState(0);
+  const [imageOffsetY, setImageOffsetY] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -42,6 +46,13 @@ export default function App() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const currentTrack = playlist[currentTrackIndex];
+    if (currentTrack?.type === 'youtube' && audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, [currentTrackIndex, playlist]);
 
   const backgroundStyle = () => {
     if (bgType === 'blur') {
@@ -159,7 +170,8 @@ export default function App() {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         audioCtxRef.current = new AudioContextClass();
         analyserRef.current = audioCtxRef.current.createAnalyser();
-        analyserRef.current.fftSize = 128; // 64 frequency bins
+        analyserRef.current.fftSize = 256; // 128 frequency bins
+        analyserRef.current.smoothingTimeConstant = 0.85;
         sourceNodeRef.current = audioCtxRef.current.createMediaElementSource(audioRef.current);
         sourceNodeRef.current.connect(analyserRef.current);
         analyserRef.current.connect(audioCtxRef.current.destination);
@@ -189,12 +201,14 @@ export default function App() {
     let y = canvas.height - barHeight;
 
     if (isYoutube) {
-      const time = Date.now() / 150;
+      const time = Date.now() / 200;
       for (let i = 0; i < visualBins; i++) {
-        let percent = 0;
+        let percent = 0.05;
         if (isPlaying) {
-          percent = (Math.sin(time + i) + Math.sin(time * 0.8 - i * 1.5) + 2) / 4;
-          percent = percent * 0.7 + Math.random() * 0.3;
+          const noise = Math.sin(time * 2 + i * 1.5) * Math.cos(time * 1.5 - i * 0.5);
+          const beat = Math.pow(Math.sin(time * 3), 8) * 0.3;
+          const bassBoost = i < 10 ? beat * (1 - i/10) : 0;
+          percent = Math.abs(noise) * 0.5 + bassBoost + 0.1;
         }
         
         const barWidth = Math.max(percent * canvas.width, 4);
@@ -507,12 +521,15 @@ export default function App() {
         style={backgroundStyle()}
       />
       {/* Dark Overlay for better contrast */}
-      <div className="absolute inset-0 z-0 bg-gradient-to-b from-black/20 to-black/80" />
+      <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.3)_0%,rgba(0,0,0,0.8)_100%)]" />
 
       {/* Main Content */}
       <div className="relative z-10 flex w-full p-4 sm:p-6 items-center justify-center min-h-[100dvh]">
         
         <div className="relative w-full max-w-[400px] mx-auto">
+          {/* Glow Behind Player */}
+          <div className="absolute inset-0 bg-white/10 blur-[100px] rounded-full z-0 pointer-events-none" />
+
           {/* Vertical Visualizer */}
           <div className="absolute right-full top-8 bottom-8 w-12 md:w-16 mr-2 md:mr-4 pointer-events-none z-0 opacity-80 hidden sm:block">
             <canvas ref={canvasRef} className="w-full h-full" />
@@ -546,16 +563,22 @@ export default function App() {
                 </div>
               </div>
             )}
-            <img 
-              src={imageUrl || undefined} 
-              alt="Album Art" 
-              className={`w-full h-full object-cover transition-transform duration-700 ${imageStyle === 'vinyl' ? (isPlaying && !isCapturing ? 'animate-[spin_10s_linear_infinite]' : '') : 'group-hover:scale-105'}`}
-              referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop';
-              }}
-            />
+            <div className={`w-full h-full flex items-center justify-center transition-transform duration-700 ${imageStyle === 'vinyl' ? (isPlaying && !isCapturing ? 'animate-[spin_10s_linear_infinite]' : '') : 'group-hover:scale-105'}`}>
+              <img 
+                src={imageUrl || undefined} 
+                alt="Album Art" 
+                className="w-full h-full"
+                style={{ 
+                  objectFit: imageFit,
+                  transform: imageStyle === 'square' ? `scale(${imageZoom}) translate(${imageOffsetX}%, ${imageOffsetY}%)` : undefined
+                }}
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop';
+                }}
+              />
+            </div>
           </div>
 
           {/* Song Info */}
@@ -748,7 +771,7 @@ export default function App() {
           {/* Image Style */}
           <div>
             <label className="block text-[10px] font-bold text-white/50 mb-2 uppercase tracking-widest">Kiểu ảnh (Image Style)</label>
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
+            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5 mb-3">
               <button 
                 onClick={() => setImageStyle('square')}
                 className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${imageStyle === 'square' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
@@ -762,6 +785,80 @@ export default function App() {
                 <Disc className="w-4 h-4" /> Đĩa than
               </button>
             </div>
+
+            <label className="block text-[10px] font-bold text-white/50 mb-2 uppercase tracking-widest">Hiển thị ảnh (Image Fit)</label>
+            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5 mb-3">
+              <button 
+                onClick={() => setImageFit('cover')}
+                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all ${imageFit === 'cover' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+              >
+                Lấp đầy (Cover)
+              </button>
+              <button 
+                onClick={() => setImageFit('contain')}
+                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all ${imageFit === 'contain' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+              >
+                Vừa vặn (Contain)
+              </button>
+            </div>
+
+            {imageStyle === 'square' && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
+                    <span>Thu phóng ảnh (Zoom)</span>
+                    <span className="text-green-500">{imageZoom.toFixed(1)}x</span>
+                  </label>
+                  <div className="relative w-full h-8 flex items-center cursor-pointer">
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="3" 
+                      step="0.1"
+                      value={imageZoom}
+                      onChange={(e) => setImageZoom(parseFloat(e.target.value))}
+                      className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
+                    <span>Căn ngang (Pan X)</span>
+                    <span className="text-green-500">{imageOffsetX}%</span>
+                  </label>
+                  <div className="relative w-full h-8 flex items-center cursor-pointer">
+                    <input 
+                      type="range" 
+                      min="-50" 
+                      max="50" 
+                      step="1"
+                      value={imageOffsetX}
+                      onChange={(e) => setImageOffsetX(parseInt(e.target.value))}
+                      className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
+                    <span>Căn dọc (Pan Y)</span>
+                    <span className="text-green-500">{imageOffsetY}%</span>
+                  </label>
+                  <div className="relative w-full h-8 flex items-center cursor-pointer">
+                    <input 
+                      type="range" 
+                      min="-50" 
+                      max="50" 
+                      step="1"
+                      value={imageOffsetY}
+                      onChange={(e) => setImageOffsetY(parseInt(e.target.value))}
+                      className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
