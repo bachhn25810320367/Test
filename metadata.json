@@ -1,7 +1,5 @@
 {
-  "name": "CyberShield Elite",
-  "description": "A premium cybersecurity resource hub featuring AI-powered tips, curated security toolkits, and interactive threat analysis tools using Gemini AI.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "Neo-Brutalist Technical Layout",
+  "description": "A High-Tech Minimalism web layout featuring Neo-Brutalism and Cyber-industrial aesthetics.",
+  "requestFramePermissions": []
 }
