@@ -1,992 +1,326 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, 
-  Heart, MonitorSpeaker, Share2, MoreHorizontal, Settings2, 
-  ChevronDown, ListMusic, Upload, Download, Disc, Square, X,
-  Music, Volume2, VolumeX
-} from 'lucide-react';
-import * as htmlToImage from 'html-to-image';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-import ReactPlayer from 'react-player';
-
-type Track = { url: string; name: string; type: 'local' | 'youtube'; thumbnail?: string };
+import { motion, AnimatePresence } from "motion/react";
+import { ArrowLeft, ArrowRight, Barcode, Info, Menu, Search, X, Image as ImageIcon, Music } from "lucide-react";
+import { useState } from "react";
+import { ImageTool } from "./components/ImageTool";
+import { SpotifyTool } from "./components/SpotifyTool";
+import { ProductMockupTool } from "./components/ProductMockupTool";
 
 export default function App() {
-  const [imageUrl, setImageUrl] = useState('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop');
-  const [songName, setSongName] = useState('Midnight City');
-  const [artistName, setArtistName] = useState('M83');
-  const [bgType, setBgType] = useState<'blur' | 'color'>('blur');
-  const [bgColor, setBgColor] = useState('#121212');
-  const [progress, setProgress] = useState(35);
-  const [currentTime, setCurrentTime] = useState(84); // 1:24
-  const [duration, setDuration] = useState(219); // 3:39
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [showControls, setShowControls] = useState(false);
-  const [imageStyle, setImageStyle] = useState<'square' | 'vinyl'>('square');
-  const [imageFit, setImageFit] = useState<'cover' | 'contain'>('cover');
-  const [imageZoom, setImageZoom] = useState(1);
-  const [imageOffsetX, setImageOffsetX] = useState(0);
-  const [imageOffsetY, setImageOffsetY] = useState(0);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [volume, setVolume] = useState(1);
-  
-  const [playlist, setPlaylist] = useState<Track[]>([]);
-  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [overlayEffect, setOverlayEffect] = useState<'none' | 'snow' | 'rain'>('none');
-  const [youtubeLink, setYoutubeLink] = useState('');
-  const [isAddingYoutube, setIsAddingYoutube] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<'home' | 'image-tool' | 'spotify-tool' | 'mockup-tool'>('home');
 
-  const frameRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const playerRef = useRef<any>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const effectCanvasRef = useRef<HTMLCanvasElement>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const animationRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const currentTrack = playlist[currentTrackIndex];
-    if (currentTrack?.type === 'youtube' && audioRef.current) {
-      audioRef.current.pause();
-    }
-  }, [currentTrackIndex, playlist]);
-
-  const backgroundStyle = () => {
-    if (bgType === 'blur') {
-      return {
-        backgroundImage: `url(${imageUrl})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      };
-    }
-    return {
-      backgroundColor: bgColor,
-    };
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setter(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      const newTracks: Track[] = files.map(file => ({
-        url: URL.createObjectURL(file),
-        name: file.name.replace(/\.[^/.]+$/, ""),
-        type: 'local'
-      }));
-      
-      setPlaylist(prev => {
-        const updated = [...prev, ...newTracks];
-        if (prev.length === 0) {
-          setSongName(updated[0].name);
-          setIsPlaying(true);
-        }
-        return updated;
-      });
-    }
-  };
-
-  const handleAddYoutube = async () => {
-    if (!youtubeLink) return;
-    setIsAddingYoutube(true);
-    try {
-      // Extract video ID to get a better thumbnail
-      const videoIdMatch = youtubeLink.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
-      const videoId = videoIdMatch ? videoIdMatch[1] : null;
-      
-      const response = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(youtubeLink)}`);
-      const data = await response.json();
-      
-      if (data.error) {
-        alert('Không thể lấy thông tin từ link YouTube này.');
-        return;
-      }
-
-      const thumbnail = videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : data.thumbnail_url;
-
-      const newTrack: Track = {
-        url: youtubeLink,
-        name: data.title,
-        type: 'youtube',
-        thumbnail: thumbnail
-      };
-
-      setPlaylist(prev => {
-        const updated = [...prev, newTrack];
-        if (prev.length === 0) {
-          setSongName(newTrack.name);
-          setImageUrl(newTrack.thumbnail || imageUrl);
-          setIsPlaying(true);
-        }
-        return updated;
-      });
-      setYoutubeLink('');
-    } catch (error) {
-      console.error('Error adding youtube link:', error);
-      alert('Có lỗi xảy ra khi thêm link YouTube.');
-    } finally {
-      setIsAddingYoutube(false);
-    }
-  };
-
-  const playTrack = (index: number) => {
-    const track = playlist[index];
-    setSongName(track.name);
-    if (track.thumbnail) {
-      setImageUrl(track.thumbnail);
-    }
-    setIsPlaying(true);
-  };
-
-  const handleNext = () => {
-    if (playlist.length === 0) return;
-    const nextIndex = (currentTrackIndex + 1) % playlist.length;
-    setCurrentTrackIndex(nextIndex);
-    playTrack(nextIndex);
-  };
-
-  const handlePrev = () => {
-    if (playlist.length === 0) return;
-    const prevIndex = currentTrackIndex === 0 ? playlist.length - 1 : currentTrackIndex - 1;
-    setCurrentTrackIndex(prevIndex);
-    playTrack(prevIndex);
-  };
-
-  const setupAudioContext = () => {
-    if (!audioCtxRef.current && audioRef.current) {
-      try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        audioCtxRef.current = new AudioContextClass();
-        analyserRef.current = audioCtxRef.current.createAnalyser();
-        analyserRef.current.fftSize = 256; // 128 frequency bins
-        analyserRef.current.smoothingTimeConstant = 0.85;
-        sourceNodeRef.current = audioCtxRef.current.createMediaElementSource(audioRef.current);
-        sourceNodeRef.current.connect(analyserRef.current);
-        analyserRef.current.connect(audioCtxRef.current.destination);
-      } catch (e) {
-        console.error("AudioContext setup failed", e);
-      }
-    }
-    if (audioCtxRef.current?.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-  };
-
-  const drawVisualizer = () => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const currentTrack = playlist[currentTrackIndex];
-    const isYoutube = currentTrack?.type === 'youtube';
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    const visualBins = 38; // Math.floor(64 * 0.6)
-    const barHeight = (canvas.height / visualBins) * 0.7;
-    const gap = (canvas.height / visualBins) * 0.3;
-    let y = canvas.height - barHeight;
-
-    if (isYoutube) {
-      const time = Date.now() / 200;
-      for (let i = 0; i < visualBins; i++) {
-        let percent = 0.05;
-        if (isPlaying) {
-          const noise = Math.sin(time * 2 + i * 1.5) * Math.cos(time * 1.5 - i * 0.5);
-          const beat = Math.pow(Math.sin(time * 3), 8) * 0.3;
-          const bassBoost = i < 10 ? beat * (1 - i/10) : 0;
-          percent = Math.abs(noise) * 0.5 + bassBoost + 0.1;
-        }
-        
-        const barWidth = Math.max(percent * canvas.width, 4);
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + percent * 0.7})`;
-        
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(canvas.width - barWidth, y, barWidth, barHeight, [4, 0, 0, 4]);
-          ctx.fill();
-        } else {
-          ctx.fillRect(canvas.width - barWidth, y, barWidth, barHeight);
-        }
-        y -= (barHeight + gap);
-      }
-      return;
-    }
-
-    if (!analyserRef.current) return;
-
-    const bufferLength = analyserRef.current.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    analyserRef.current.getByteFrequencyData(dataArray);
-
-    for (let i = 0; i < visualBins; i++) {
-      const percent = dataArray[i] / 255;
-      const barWidth = Math.max(percent * canvas.width, 4);
-      
-      ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + percent * 0.7})`;
-      
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(canvas.width - barWidth, y, barWidth, barHeight, [4, 0, 0, 4]);
-        ctx.fill();
-      } else {
-        ctx.fillRect(canvas.width - barWidth, y, barWidth, barHeight);
-      }
-      
-      y -= (barHeight + gap);
-    }
-  };
-
-  const togglePlay = () => {
-    const nextState = !isPlaying;
-    setIsPlaying(nextState);
-    
-    const currentTrack = playlist[currentTrackIndex];
-    if (!currentTrack || currentTrack.type === 'local') {
-      setupAudioContext();
-      if (audioRef.current) {
-        if (nextState) {
-          audioRef.current.play().catch(e => {
-            if (e.name !== 'AbortError') console.error(e);
-          });
-        } else {
-          audioRef.current.pause();
-        }
-      }
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    const currentTrack = playlist[currentTrackIndex];
-    if (currentTrack?.type === 'local' && audioRef.current && !isCapturing) {
-      setCurrentTime(audioRef.current.currentTime);
-      setProgress((audioRef.current.currentTime / audioRef.current.duration) * 100 || 0);
-    }
-  };
-
-  const handleLoadedMetadata = () => {
-    const currentTrack = playlist[currentTrackIndex];
-    if (currentTrack?.type === 'local' && audioRef.current) {
-      setDuration(audioRef.current.duration);
-      if (isPlaying) {
-        audioRef.current.play().catch(e => {
-          if (e.name !== 'AbortError') console.error(e);
-        });
-      }
-    }
-  };
-
-  const handleYoutubeProgress = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    if (!isCapturing) {
-      const target = e.target as HTMLVideoElement;
-      setCurrentTime(target.currentTime);
-      setProgress((target.currentTime / target.duration) * 100 || 0);
-    }
-  };
-
-  const handleYoutubeDuration = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const target = e.target as HTMLVideoElement;
-    setDuration(target.duration);
-  };
-
-  const handleManualProgress = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = Number(e.target.value);
-    setProgress(val);
-    const newTime = (val / 100) * duration;
-    setCurrentTime(newTime);
-    
-    const currentTrack = playlist[currentTrackIndex];
-    if (currentTrack?.type === 'local' && audioRef.current) {
-      audioRef.current.currentTime = newTime;
-    } else if (currentTrack?.type === 'youtube' && playerRef.current) {
-      (playerRef.current as any).currentTime = newTime;
-    }
-  };
-
-  const formatTime = (time: number) => {
-    if (isNaN(time) || !isFinite(time)) return "0:00";
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const handleDownload = async () => {
-    if (!frameRef.current) return;
-    setIsDownloading(true);
-    setIsCapturing(true); // Pauses vinyl animation without stopping audio
-    
-    try {
-      // Wait a tiny bit for the CSS animation to stop
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      const dataUrl = await htmlToImage.toPng(frameRef.current, {
-        quality: 1,
-        pixelRatio: 2,
-        skipFonts: true,
-        backgroundColor: 'rgba(0,0,0,0)',
-        style: {
-          transform: 'scale(1)',
-          borderRadius: '40px',
-          overflow: 'hidden',
-          margin: '0',
-        }
-      });
-      
-      const link = document.createElement('a');
-      link.download = `${songName || 'spotify-frame'}.png`;
-      link.href = dataUrl;
-      link.click();
-
-    } catch (error) {
-      console.error('Error downloading image:', error);
-      alert('Có lỗi xảy ra khi tải ảnh. Vui lòng thử lại. (Lưu ý: Một số ảnh từ link ngoài có thể chặn tải xuống do bảo mật CORS. Hãy thử tải ảnh lên từ máy của bạn)');
-    } finally {
-      setIsDownloading(false);
-      setIsCapturing(false);
-    }
-  };
-
-  // Weather Effects
-  useEffect(() => {
-    const canvas = effectCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    if (overlayEffect === 'none') {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
-    }
-
-    let animationId: number;
-    let particles: any[] = [];
-    
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', resize);
-    resize();
-
-    const particleCount = overlayEffect === 'rain' ? 120 : overlayEffect === 'snow' ? 100 : 0;
-    
-    for (let i = 0; i < particleCount; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        speedY: overlayEffect === 'rain' ? 10 + Math.random() * 6 : 1 + Math.random() * 2,
-        speedX: overlayEffect === 'rain' ? 0 : -1 + Math.random() * 2,
-        size: overlayEffect === 'rain' ? Math.random() * 1.5 + 0.5 : Math.random() * 3 + 1,
-        opacity: Math.random() * 0.5 + 0.3,
-        angle: overlayEffect === 'rain' ? 0 : Math.random() * Math.PI * 2,
-        spin: overlayEffect === 'rain' ? 0 : (Math.random() - 0.5) * 0.1
-      });
-    }
-
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      particles.forEach(p => {
-        p.y += p.speedY;
-        p.x += p.speedX;
-        p.angle += p.spin;
-        
-        if (p.y > canvas.height) {
-          p.y = -20;
-          p.x = Math.random() * canvas.width;
-        }
-        if (p.x > canvas.width + 20) p.x = -20;
-        if (p.x < -20) p.x = canvas.width + 20;
-
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.angle);
-        
-        if (overlayEffect === 'rain') {
-          ctx.fillStyle = `rgba(200, 220, 255, ${p.opacity * 0.6})`;
-          ctx.fillRect(0, 0, p.size, p.size * 15);
-        } else if (overlayEffect === 'snow') {
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
-          ctx.beginPath();
-          ctx.arc(0, 0, p.size, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        
-        ctx.restore();
-      });
-      
-      animationId = requestAnimationFrame(draw);
-    };
-    
-    draw();
-    
-    return () => {
-      window.removeEventListener('resize', resize);
-      cancelAnimationFrame(animationId);
-    };
-  }, [overlayEffect]);
-
-  useEffect(() => {
-    if (isPlaying) {
-      setupAudioContext();
-      const draw = () => {
-        drawVisualizer();
-        animationRef.current = requestAnimationFrame(draw);
-      };
-      draw();
-    } else {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    }
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    };
-  }, [isPlaying]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  useEffect(() => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const resizeObserver = new ResizeObserver(entries => {
-      for (let entry of entries) {
-        canvas.width = entry.contentRect.width * (window.devicePixelRatio || 1);
-        canvas.height = entry.contentRect.height * (window.devicePixelRatio || 1);
-      }
-    });
-    resizeObserver.observe(canvas);
-    return () => resizeObserver.disconnect();
-  }, []);
+  const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
 
   return (
-    <div className="min-h-[100dvh] relative flex items-center justify-center overflow-hidden font-sans text-white bg-black">
-      {/* Weather Effects Canvas */}
-      <canvas 
-        ref={effectCanvasRef} 
-        className="fixed inset-0 pointer-events-none z-20" 
-      />
+    <div className="relative min-h-screen overflow-x-hidden bg-parchment text-ink font-sans">
+      {/* Texture Overlay */}
+      <div className="grainy-overlay" />
 
-      {/* Hidden Audio Element */}
-      <audio 
-        ref={audioRef}
-        src={playlist[currentTrackIndex]?.type === 'local' ? playlist[currentTrackIndex].url : undefined}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={handleNext}
-        crossOrigin="anonymous"
-      />
-      
-      {/* Hidden YouTube Player */}
-      {playlist[currentTrackIndex]?.type === 'youtube' && (
-        <div className="hidden">
-          {/* @ts-ignore */}
-          <ReactPlayer
-            ref={playerRef}
-            src={playlist[currentTrackIndex].url}
-            playing={isPlaying}
-            volume={volume}
-            onTimeUpdate={handleYoutubeProgress}
-            onLoadedMetadata={handleYoutubeDuration}
-            onEnded={handleNext}
-            width="0"
-            height="0"
-            config={{
-              youtube: {
-                playerVars: { showinfo: 0, controls: 0 }
-              }
-            } as any}
-          />
-        </div>
-      )}
-
-      {/* Background */}
-      <div 
-        className={`absolute inset-0 z-0 transition-all duration-1000 ${bgType === 'blur' ? 'blur-3xl scale-110 opacity-60' : 'opacity-100'}`}
-        style={backgroundStyle()}
-      />
-      {/* Dark Overlay for better contrast */}
-      <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.3)_0%,rgba(0,0,0,0.8)_100%)]" />
-
-      {/* Main Content */}
-      <div className="relative z-10 flex w-full p-4 sm:p-6 items-center justify-center min-h-[100dvh]">
-        
-        <div className="relative w-full max-w-[400px] mx-auto">
-          {/* Glow Behind Player */}
-          <div className="absolute inset-0 bg-white/10 blur-[100px] rounded-full z-0 pointer-events-none" />
-
-          {/* Vertical Visualizer */}
-          <div className="absolute right-full top-8 bottom-8 w-12 md:w-16 mr-2 md:mr-4 pointer-events-none z-0 opacity-80 hidden sm:block">
-            <canvas ref={canvasRef} className="w-full h-full" />
-          </div>
-
-          {/* Spotify Player Frame */}
-          <div 
-            ref={frameRef}
-            className="w-full bg-black/40 backdrop-blur-2xl rounded-[2.5rem] p-6 md:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col relative overflow-hidden"
-          >
-          {/* Header */}
-          <div className="flex justify-between items-center mb-8 relative z-10">
-            <button className="p-3 -ml-3 text-white/70 hover:text-white transition-colors">
-              <ChevronDown className="w-6 h-6" />
-            </button>
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] font-medium tracking-widest uppercase text-white/70">Playing from playlist</span>
-              <span className="text-xs font-bold text-white">Liked Songs</span>
-            </div>
-            <button className="p-3 -mr-3 text-white/70 hover:text-white transition-colors">
-              <MoreHorizontal className="w-6 h-6" />
-            </button>
-          </div>
-
-          {/* Album Art */}
-          <div className={`relative w-full aspect-square mb-8 shadow-[0_8px_30px_rgba(0,0,0,0.6)] overflow-hidden group flex items-center justify-center z-10 ${imageStyle === 'vinyl' ? 'rounded-full' : 'rounded-xl'}`}>
-            {imageStyle === 'vinyl' && (
-              <div className="absolute inset-0 z-20 rounded-full border-[12px] border-black/80 shadow-inner flex items-center justify-center pointer-events-none">
-                <div className="w-12 h-12 rounded-full bg-black/90 border border-white/10 flex items-center justify-center">
-                  <div className="w-3 h-3 rounded-full bg-white/20" />
-                </div>
-              </div>
-            )}
-            <div className={`w-full h-full flex items-center justify-center transition-transform duration-700 ${imageStyle === 'vinyl' ? (isPlaying && !isCapturing ? 'animate-[spin_10s_linear_infinite]' : '') : 'group-hover:scale-105'}`}>
-              <img 
-                src={imageUrl || undefined} 
-                alt="Album Art" 
-                className="w-full h-full"
-                style={{ 
-                  objectFit: imageFit,
-                  transform: imageStyle === 'square' ? `scale(${imageZoom}) translate(${imageOffsetX}%, ${imageOffsetY}%)` : undefined
-                }}
-                referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=1000&auto=format&fit=crop';
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Song Info */}
-          <div className="flex justify-between items-center mb-6 relative z-10">
-            <div className="flex flex-col overflow-hidden pr-4">
-              <h2 className="text-2xl font-bold text-white truncate mb-1 tracking-tight">{songName}</h2>
-              <p className="text-base text-white/70 truncate">{artistName}</p>
-            </div>
-            <button className="p-3 -mr-3 text-green-500 hover:scale-110 transition-transform flex-shrink-0">
-              <Heart className="w-7 h-7" fill="currentColor" />
-            </button>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="mb-6 relative z-10">
-            <div className="relative w-full h-8 flex items-center cursor-pointer group mb-1">
-              {/* Visible Track */}
-              <div className="h-1.5 bg-white/20 rounded-full w-full overflow-hidden relative pointer-events-none">
-                <div 
-                  className="h-full bg-white group-hover:bg-green-500 transition-colors relative"
-                  style={{ width: `${progress}%` }}
-                >
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 shadow" />
-                </div>
-              </div>
-              {/* Invisible Input for Touch */}
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                step="0.1"
-                value={progress}
-                onChange={handleManualProgress}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-            </div>
-            <div className="flex justify-between text-[11px] text-white/60 font-medium px-1">
-              <span>{formatTime(currentTime)}</span>
-              <span>{playlist.length > 0 ? formatTime(duration) : "0:00"}</span>
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div className="flex justify-between items-center mb-6 px-2 relative z-10">
-            <button className="p-3 -ml-3 text-green-500 hover:text-green-400 transition-colors relative">
-              <Shuffle className="w-5 h-5" />
-              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-green-500 rounded-full" />
-            </button>
-            <button className="p-3 text-white hover:text-white/80 transition-colors" onClick={handlePrev}>
-              <SkipBack className="w-9 h-9 fill-current" />
-            </button>
-            <button 
-              className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-lg"
-              onClick={togglePlay}
-            >
-              {isPlaying ? (
-                <Pause className="w-8 h-8 fill-current" />
-              ) : (
-                <Play className="w-8 h-8 fill-current ml-1" />
-              )}
-            </button>
-            <button className="p-3 text-white hover:text-white/80 transition-colors" onClick={handleNext}>
-              <SkipForward className="w-9 h-9 fill-current" />
-            </button>
-            <button className="p-3 -mr-3 text-white/70 hover:text-white transition-colors">
-              <Repeat className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Footer Controls */}
-          <div className="flex justify-between items-center text-white/70 mt-2 relative z-10">
-            <div className="flex items-center gap-2 group relative">
-              <button 
-                className="p-3 -ml-3 hover:text-white transition-colors"
-                onClick={() => setVolume(volume === 0 ? 1 : 0)}
-              >
-                {volume === 0 ? <VolumeX className="w-5 h-5" /> : <MonitorSpeaker className="w-5 h-5" />}
-              </button>
-              <div className="w-0 overflow-hidden group-hover:w-24 transition-all duration-300 ease-in-out flex items-center h-10">
-                <input 
-                  type="range" 
-                  min="0" max="1" step="0.01" 
-                  value={volume} 
-                  onChange={(e) => setVolume(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button className="p-3 hover:text-white transition-colors"><Share2 className="w-5 h-5" /></button>
-              <button className="p-3 -mr-3 hover:text-white transition-colors"><ListMusic className="w-5 h-5" /></button>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
-
-      {/* Settings Panel Drawer */}
-      <div 
-        className={`fixed top-0 right-0 h-[100dvh] w-full max-w-sm bg-black/90 backdrop-blur-2xl border-l border-white/10 p-6 shadow-2xl transform transition-transform duration-300 ease-in-out z-50 overflow-y-auto ${showControls ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/10 mt-[env(safe-area-inset-top,1rem)]">
-          <div className="flex items-center gap-2">
-            <Settings2 className="w-5 h-5 text-green-500" />
-            <h3 className="text-lg font-bold tracking-tight">Tùy chỉnh</h3>
-          </div>
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center p-6 md:p-10 mix-blend-difference text-parchment">
+        <div className="flex items-center gap-4">
           <button 
-            onClick={() => setShowControls(false)} 
-            className="text-white/50 hover:text-white transition-colors p-3 -mr-3"
+            onClick={toggleMenu}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors group"
           >
-            <X className="w-6 h-6" />
+            {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6 group-hover:text-gold" />}
           </button>
-        </div>
-
-        <div className="space-y-5">
-          {/* Audio Upload */}
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest">File nhạc (Audio)</label>
-            <div className="flex gap-2 mb-2">
-              <div className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white/70 truncate flex items-center">
-                {playlist.length > 0 ? `Đã tải ${playlist.length} bài hát` : 'Chưa có file nhạc'}
-              </div>
-              <label className="flex-shrink-0 bg-white/10 hover:bg-white/20 transition-colors rounded-xl px-4 py-2.5 cursor-pointer flex items-center justify-center" title="Tải nhạc lên">
-                <Music className="w-4 h-4" />
-                <input type="file" accept="audio/*" multiple className="hidden" onChange={handleAudioUpload} />
-              </label>
-            </div>
-            
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="Nhập link YouTube..." 
-                value={youtubeLink}
-                onChange={(e) => setYoutubeLink(e.target.value)}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30"
-              />
-              <button 
-                onClick={handleAddYoutube}
-                disabled={!youtubeLink || isAddingYoutube}
-                className="flex-shrink-0 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded-xl px-4 py-2.5 text-sm font-medium"
-              >
-                {isAddingYoutube ? 'Đang tải...' : 'Thêm'}
-              </button>
-            </div>
-          </div>
-
-          {/* Effects */}
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-2 uppercase tracking-widest">Hiệu ứng (Effects)</label>
-            <div className="grid grid-cols-2 gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
-              <button 
-                onClick={() => setOverlayEffect('none')}
-                className={`py-2 text-xs rounded-lg font-medium transition-all ${overlayEffect === 'none' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Không (None)
-              </button>
-              <button 
-                onClick={() => setOverlayEffect('snow')}
-                className={`py-2 text-xs rounded-lg font-medium transition-all ${overlayEffect === 'snow' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Tuyết (Snow)
-              </button>
-              <button 
-                onClick={() => setOverlayEffect('rain')}
-                className={`py-2 text-xs rounded-lg font-medium transition-all ${overlayEffect === 'rain' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Mưa (Rain)
-              </button>
-            </div>
-          </div>
-
-          {/* Image Upload */}
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest">Ảnh bài hát (Image)</label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:bg-white/10 transition-all min-w-0"
-                placeholder="https://..."
-              />
-              <label className="flex-shrink-0 bg-white/10 hover:bg-white/20 transition-colors rounded-xl px-4 py-2.5 cursor-pointer flex items-center justify-center" title="Tải ảnh lên">
-                <Upload className="w-4 h-4" />
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setImageUrl)} />
-              </label>
-            </div>
-          </div>
-
-          {/* Image Style */}
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-2 uppercase tracking-widest">Kiểu ảnh (Image Style)</label>
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5 mb-3">
-              <button 
-                onClick={() => setImageStyle('square')}
-                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${imageStyle === 'square' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                <Square className="w-4 h-4" /> Vuông
-              </button>
-              <button 
-                onClick={() => setImageStyle('vinyl')}
-                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${imageStyle === 'vinyl' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                <Disc className="w-4 h-4" /> Đĩa than
-              </button>
-            </div>
-
-            <label className="block text-[10px] font-bold text-white/50 mb-2 uppercase tracking-widest">Hiển thị ảnh (Image Fit)</label>
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5 mb-3">
-              <button 
-                onClick={() => setImageFit('cover')}
-                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all ${imageFit === 'cover' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Lấp đầy (Cover)
-              </button>
-              <button 
-                onClick={() => setImageFit('contain')}
-                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all ${imageFit === 'contain' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Vừa vặn (Contain)
-              </button>
-            </div>
-
-            {imageStyle === 'square' && (
-              <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
-                    <span>Thu phóng ảnh (Zoom)</span>
-                    <span className="text-green-500">{imageZoom.toFixed(1)}x</span>
-                  </label>
-                  <div className="relative w-full h-8 flex items-center cursor-pointer">
-                    <input 
-                      type="range" 
-                      min="1" 
-                      max="3" 
-                      step="0.1"
-                      value={imageZoom}
-                      onChange={(e) => setImageZoom(parseFloat(e.target.value))}
-                      className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
-                    <span>Căn ngang (Pan X)</span>
-                    <span className="text-green-500">{imageOffsetX}%</span>
-                  </label>
-                  <div className="relative w-full h-8 flex items-center cursor-pointer">
-                    <input 
-                      type="range" 
-                      min="-50" 
-                      max="50" 
-                      step="1"
-                      value={imageOffsetX}
-                      onChange={(e) => setImageOffsetX(parseInt(e.target.value))}
-                      className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
-                    <span>Căn dọc (Pan Y)</span>
-                    <span className="text-green-500">{imageOffsetY}%</span>
-                  </label>
-                  <div className="relative w-full h-8 flex items-center cursor-pointer">
-                    <input 
-                      type="range" 
-                      min="-50" 
-                      max="50" 
-                      step="1"
-                      value={imageOffsetY}
-                      onChange={(e) => setImageOffsetY(parseInt(e.target.value))}
-                      className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest">Tên bài hát (Song Name)</label>
-            <input 
-              type="text" 
-              value={songName}
-              onChange={(e) => setSongName(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:bg-white/10 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest">Tên ca sĩ (Artist Name)</label>
-            <input 
-              type="text" 
-              value={artistName}
-              onChange={(e) => setArtistName(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:bg-white/10 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
-              <span>Tiến trình (Progress)</span>
-              <span className="text-green-500">{formatTime(currentTime)}</span>
-            </label>
-            <div className="relative w-full h-8 flex items-center cursor-pointer">
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                step="0.1"
-                value={progress}
-                onChange={handleManualProgress}
-                className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest flex justify-between">
-              <span>Âm lượng (Volume)</span>
-              <span className="text-green-500">{Math.round(volume * 100)}%</span>
-            </label>
-            <div className="flex items-center gap-3">
-              <button onClick={() => setVolume(volume === 0 ? 1 : 0)} className="p-2 -ml-2 text-white/50 hover:text-white transition-colors">
-                {volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-              <div className="relative w-full h-8 flex items-center cursor-pointer">
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => setVolume(parseFloat(e.target.value))}
-                  className="w-full accent-green-500 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-white/50 mb-2 uppercase tracking-widest">Kiểu nền (Background Type)</label>
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
-              <button 
-                onClick={() => setBgType('blur')}
-                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all ${bgType === 'blur' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Mờ (Blur)
-              </button>
-              <button 
-                onClick={() => setBgType('color')}
-                className={`flex-1 py-2 text-xs rounded-lg font-medium transition-all ${bgType === 'color' ? 'bg-white text-black shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-              >
-                Màu (Color)
-              </button>
-            </div>
-          </div>
-
-          {bgType === 'color' && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <label className="block text-[10px] font-bold text-white/50 mb-1.5 uppercase tracking-widest">Màu nền (Background Color)</label>
-              <div className="flex gap-3 items-center">
-                <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 flex-shrink-0">
-                  <input 
-                    type="color" 
-                    value={bgColor}
-                    onChange={(e) => setBgColor(e.target.value)}
-                    className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer"
-                  />
-                </div>
-                <input 
-                  type="text" 
-                  value={bgColor}
-                  onChange={(e) => setBgColor(e.target.value)}
-                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:bg-white/10 transition-all font-mono uppercase"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Download Button */}
-          <div className="pt-4 border-t border-white/10 mt-6">
+          {activeTool !== 'home' && (
             <button 
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className="w-full bg-green-500 hover:bg-green-400 text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setActiveTool('home')}
+              className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-mono hover:text-gold transition-colors"
             >
-              {isDownloading ? (
-                <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-              ) : (
-                <Download className="w-5 h-5" />
-              )}
-              {isDownloading ? 'Đang tải...' : 'Tải ảnh xuống (Download)'}
+              <ArrowLeft className="w-4 h-4" /> Back to Archive
             </button>
+          )}
+          <span className="text-[10px] uppercase tracking-[0.3em] font-mono hidden md:block">Archive / 2026</span>
+        </div>
+        <h1 className="text-2xl font-serif italic tracking-tighter cursor-pointer" onClick={() => setActiveTool('home')}>The Fallen</h1>
+        <div className="flex items-center gap-6">
+          <Search className="w-5 h-5 cursor-pointer hover:text-gold transition-colors" />
+          <div className="w-8 h-8 rounded-full border border-parchment/30 flex items-center justify-center text-[10px] font-mono">
+            {activeTool === 'home' ? '01' : activeTool === 'image-tool' ? '02' : activeTool === 'spotify-tool' ? '03' : '04'}
           </div>
         </div>
+      </nav>
+
+      {/* Dropdown Menu */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <>
+            {/* Backdrop to close menu and prevent blocking */}
+            <div 
+              className="fixed inset-0 z-40 bg-black/5" 
+              onClick={() => setIsMenuOpen(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="fixed top-24 left-6 md:left-10 z-50 w-72 bg-white/95 backdrop-blur-3xl border border-ink/10 rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)] p-4"
+            >
+            <div className="space-y-2">
+              <p className="text-[10px] font-mono uppercase opacity-30 px-4 mb-4">Navigation Tools</p>
+              <button 
+                onClick={() => { setActiveTool('home'); setIsMenuOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all ${activeTool === 'home' ? 'bg-gold text-white' : 'hover:bg-ink/5'}`}
+              >
+                <Info className="w-5 h-5" />
+                <span className="text-sm font-serif italic">Main Archive</span>
+              </button>
+              <button 
+                onClick={() => { setActiveTool('image-tool'); setIsMenuOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all ${activeTool === 'image-tool' ? 'bg-gold text-white' : 'hover:bg-ink/5'}`}
+              >
+                <ImageIcon className="w-5 h-5" />
+                <span className="text-sm font-serif italic">Image Studio</span>
+              </button>
+              <button 
+                onClick={() => { setActiveTool('spotify-tool'); setIsMenuOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all ${activeTool === 'spotify-tool' ? 'bg-gold text-white' : 'hover:bg-ink/5'}`}
+              >
+                <Music className="w-5 h-5" />
+                <span className="text-sm font-serif italic">Spotify Generator</span>
+              </button>
+              <button 
+                onClick={() => { setActiveTool('mockup-tool'); setIsMenuOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all ${activeTool === 'mockup-tool' ? 'bg-gold text-white' : 'hover:bg-ink/5'}`}
+              >
+                <Barcode className="w-5 h-5" />
+                <span className="text-sm font-serif italic">Product Mockup</span>
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+
+      {/* Main Content Switcher */}
+      <div className="pt-20">
+        {activeTool === 'home' ? (
+          <>
+            {/* Hero Section (Page 1) */}
+            <main className="relative min-h-screen flex items-center justify-center overflow-hidden">
+              {/* Background Layer - Sheep + Previous Angel Blended */}
+              <div className="absolute inset-0 z-0">
+                {/* Sheep Layer */}
+                <img 
+                  src="https://images.unsplash.com/photo-1484557985045-edf25e08da73?q=80&w=1973&auto=format&fit=crop" 
+                  alt="Flock of sheep"
+                  className="absolute inset-0 w-full h-full object-cover opacity-10 grayscale blur-[4px]"
+                  referrerPolicy="no-referrer"
+                />
+                {/* Previous Angel Layer - Now in background */}
+                <img 
+                  src="https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?q=80&w=2038&auto=format&fit=crop" 
+                  alt="Background Angel"
+                  className="absolute inset-0 w-full h-full object-cover opacity-10 grayscale mix-blend-multiply"
+                  referrerPolicy="no-referrer"
+                />
+                {/* Vignette and Gradient */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(245,242,237,0.9)_100%)]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-parchment/40 via-transparent to-parchment" />
+              </div>
+
+              {/* Content Container */}
+              <div className="relative z-10 w-full max-w-[1800px] mx-auto px-6 md:px-10 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+                
+                {/* Left Metadata */}
+                <div className="lg:col-span-3 hidden lg:flex flex-col justify-center h-full space-y-12">
+                  <motion.div 
+                    initial={{ opacity: 0, x: -30 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 1 }}
+                  >
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-gold block mb-2">Issue No. 012</span>
+                    <h2 className="text-4xl font-serif leading-none mb-6 italic">The <br /> Betrayal</h2>
+                    <div className="w-12 h-px bg-gold mb-6" />
+                    <p className="text-xs leading-relaxed opacity-70 max-w-[200px]">
+                      "Satan and his angels rebelled against God in heaven, and proudly presumed to try their strength with his."
+                    </p>
+                  </motion.div>
+
+                  <div className="space-y-4 pt-10 border-t border-ink/10">
+                    <div className="flex justify-between text-[9px] font-mono uppercase opacity-40">
+                      <span>Archive</span>
+                      <span>Celestial</span>
+                    </div>
+                    <div className="flex justify-between text-[9px] font-mono uppercase opacity-40">
+                      <span>Type</span>
+                      <span>Editorial</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Center Highlight: Magazine Cover Style */}
+                <div className="lg:col-span-6 flex flex-col items-center justify-center">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                    whileInView={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                    className="relative w-full max-w-[500px] aspect-[2/3] shadow-[0_80px_150px_-40px_rgba(0,0,0,0.7)] border-[1px] border-ink/10 overflow-hidden group bg-[#2a2a2a]"
+                  >
+                    {/* Main Image - Fallen Angel with light rays */}
+                    <img 
+                      src="https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=1945&auto=format&fit=crop" 
+                      alt="Fallen Angel Magazine Cover"
+                      className="w-full h-full object-cover grayscale-[0.2] contrast-[1.1] brightness-[0.8] transition-transform duration-1000 group-hover:scale-105"
+                      referrerPolicy="no-referrer"
+                    />
+                    
+                    {/* Canvas Texture Overlay */}
+                    <div className="absolute inset-0 opacity-20 pointer-events-none mix-blend-overlay bg-[url('https://www.transparenttextures.com/patterns/canvas-orange.png')]" />
+
+                    {/* Magazine Typography Overlay */}
+                    <div className="absolute inset-0 p-8 flex flex-col justify-between pointer-events-none">
+                      {/* Top Title */}
+                      <div className="text-center">
+                        <h1 className="text-[100px] md:text-[120px] font-serif leading-none tracking-[-0.05em] text-white/90 drop-shadow-2xl">
+                          FALLEN
+                        </h1>
+                      </div>
+
+                      {/* Middle Elements */}
+                      <div className="flex justify-between items-center w-full">
+                        <span className="text-white/60 font-mono text-[14px] tracking-widest">012</span>
+                        <span className="text-white/60 font-mono text-[14px] tracking-widest uppercase">BETRAY</span>
+                      </div>
+
+                      {/* Bottom Elements */}
+                      <div className="space-y-4">
+                        <h2 className="text-6xl font-serif text-white/90 italic">Angels</h2>
+                        
+                        <div className="bg-black/80 p-4 backdrop-blur-sm border-t border-white/10">
+                          <p className="text-[8px] text-white/70 leading-tight font-sans text-justify">
+                            Satan and his angels rebelled against God in heaven, and proudly presumed to try their strength with his. And when God, by his almighty power, overcame the strength of Satan, and sent him like lightning from heaven to hell with all his army; Satan still hoped to get the victory by subtlety.
+                          </p>
+                          <div className="mt-4 flex justify-between items-end">
+                            <Barcode className="w-24 h-8 text-white/80" />
+                            <span className="text-[7px] text-white/40 font-mono">VOL. 01 / ISSUE 12</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Chiaroscuro Overlays */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+                  </motion.div>
+                </div>
+
+                {/* Right Editorial */}
+                <div className="lg:col-span-3 flex flex-col justify-center h-full space-y-12">
+                  <div className="relative">
+                    <div className="space-y-10 relative z-10">
+                      <div className="bg-white/30 backdrop-blur-md p-6 border-l-2 border-gold shadow-xl">
+                        <span className="text-[9px] font-mono uppercase tracking-widest text-gold block mb-2">Editorial Note</span>
+                        <p className="text-[12px] font-sans leading-relaxed text-ink/90 italic">
+                          "The transition from divine grace to terrestrial weight is captured here in a modern editorial format, blending classical Baroque tension with contemporary magazine aesthetics."
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-6">
+                        <button className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.3em] hover:text-gold transition-colors group w-fit">
+                          Full Collection <ArrowRight className="w-4 h-4 group-hover:translate-x-2 transition-transform" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </main>
+
+            {/* Secondary Section - Editorial Grid */}
+            <section className="py-32 px-6 md:px-10 max-w-[1800px] mx-auto border-t border-ink/10">
+              <div className="flex flex-col md:flex-row justify-between items-end mb-20 gap-10">
+                <div className="max-w-xl">
+                  <span className="text-[10px] font-mono uppercase tracking-[0.5em] text-gold block mb-6">Section II / Perspectives</span>
+                  <h2 className="text-5xl md:text-7xl font-serif leading-[0.9] tracking-tight">Gothic Revival & <br /> Baroque Shadows</h2>
+                </div>
+                <div className="flex gap-12 text-[10px] font-mono uppercase tracking-[0.2em] opacity-60">
+                  <span className="cursor-pointer hover:text-gold transition-colors">Anatomy</span>
+                  <span className="cursor-pointer hover:text-gold transition-colors">Light</span>
+                  <span className="cursor-pointer hover:text-gold transition-colors">Void</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {[
+                  {
+                    title: "The Chiaroscuro Effect",
+                    img: "https://images.unsplash.com/photo-1549490349-8643362247b5?q=80&w=1974&auto=format&fit=crop",
+                    num: "01"
+                  },
+                  {
+                    title: "Marble & Flesh",
+                    img: "https://images.unsplash.com/photo-1554188248-986adbb73be4?q=80&w=2070&auto=format&fit=crop",
+                    num: "02"
+                  },
+                  {
+                    title: "The Void Above",
+                    img: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=2070&auto=format&fit=crop",
+                    num: "03"
+                  }
+                ].map((item, idx) => (
+                  <motion.div 
+                    key={idx}
+                    whileHover={{ y: -15 }}
+                    className="relative aspect-[4/5] overflow-hidden group cursor-pointer shadow-2xl"
+                  >
+                    <img 
+                      src={item.img} 
+                      alt={item.title} 
+                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-1000"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-ink/60 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-10 text-parchment">
+                      <span className="text-[10px] font-mono mb-3 text-gold">{item.num}</span>
+                      <h4 className="text-3xl font-serif italic leading-none">{item.title}</h4>
+                      <div className="w-0 group-hover:w-full h-px bg-gold mt-4 transition-all duration-700" />
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </section>
+          </>
+        ) : activeTool === 'image-tool' ? (
+          <div className="min-h-screen py-20 px-6">
+            <ImageTool />
+          </div>
+        ) : activeTool === 'spotify-tool' ? (
+          <div className="min-h-screen py-20 px-6">
+            <SpotifyTool />
+          </div>
+        ) : (
+          <div className="min-h-screen py-20 px-6">
+            <ProductMockupTool />
+          </div>
+        )}
       </div>
 
-      {/* Floating Toggle Button */}
-      <button 
-        onClick={() => setShowControls(true)}
-        className={`fixed bottom-6 right-6 z-40 bg-green-500 text-black p-4 rounded-full shadow-[0_8px_30px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-all duration-300 ${showControls ? 'scale-0 opacity-0 pointer-events-none' : 'scale-100 opacity-100'}`}
-      >
-        <Settings2 className="w-6 h-6" />
-      </button>
+      {/* Footer */}
+      <footer className="p-10 md:p-20 border-t border-ink/10 flex flex-col md:flex-row justify-between items-center gap-10">
+        <div className="flex items-center gap-4">
+          <Info className="w-5 h-5 opacity-30" />
+          <span className="text-[10px] font-mono uppercase tracking-[0.3em] opacity-30">© 2026 Fallen Archive / Editorial Design</span>
+        </div>
+        <div className="flex gap-12 text-[10px] font-mono uppercase tracking-[0.4em]">
+          <a href="#" className="hover:text-gold transition-colors">Instagram</a>
+          <a href="#" className="hover:text-gold transition-colors">Twitter</a>
+          <a href="#" className="hover:text-gold transition-colors">Journal</a>
+        </div>
+      </footer>
+
+      {/* Side Decoration */}
+      <div className="fixed right-6 top-1/2 -translate-y-1/2 vertical-text hidden xl:flex items-center gap-6 opacity-20 pointer-events-none">
+        <span className="text-[11px] font-mono uppercase tracking-[0.6em]">Renaissance Aesthetics</span>
+        <div className="w-px h-32 bg-ink" />
+      </div>
     </div>
   );
 }
+
